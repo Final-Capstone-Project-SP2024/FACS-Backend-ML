@@ -101,12 +101,14 @@ def detect(save_img=False):
                 # Write results
                 for *xyxy, conf, cls in det:
                     if save_txt:  # Write to file
+                        print(f'Detected {names[int(cls)]} with confidence: {conf * 100:.2f}%')
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         with open(txt_path + '.txt', 'a') as f:
                             f.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
+                        print(f'Detected {names[int(cls)]} with confidence: {conf * 100:.2f}%')
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
                         # plot_one_box(xyxy, im0, label=None, color=colors[int(cls)], line_thickness=3)  # 只画框，不画类别 置信度
 
@@ -114,7 +116,7 @@ def detect(save_img=False):
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
             # Stream results
-            if view_img:
+            if view_img:    
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
