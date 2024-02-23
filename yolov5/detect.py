@@ -7,18 +7,17 @@ from pathlib import Path
 
 import cv2
 import torch
-import torch.backends.cudnn as cudnn
-from numpy import random
-
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import (
     check_img_size, non_max_suppression, apply_classifier, scale_coords, xyxy2xywh, plot_one_box, strip_optimizer)
 from utils.torch_utils import select_device, load_classifier, time_synchronized
+from numpy import random
+import datetime as dt
 
-def detect(save_img=False):
-    out, source, weights, view_img, save_txt, imgsz = \
-        opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size
+def detect_and_record(save_img=False):
+    out, source, weights, view_img, save_txt, imgsz, record_folder = \
+        opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.record_folder
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
@@ -45,7 +44,6 @@ def detect(save_img=False):
     vid_path, vid_writer = None, None
     if webcam:
         view_img = True
-        cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz)
     else:
         save_img = True
@@ -54,6 +52,15 @@ def detect(save_img=False):
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(names))]
+
+    # Initialize recording variables
+    recording = False
+    start_time = 0
+    record_duration = 10  # in seconds
+
+    # Initialize fire detection counter
+    total_frames = 0
+    fire_frames = 0
 
     # Run inference
     t0 = time.time()
@@ -89,34 +96,53 @@ def detect(save_img=False):
             txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+
+            # Increment total frames counter
+            total_frames += 1
+
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
-                # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    s += '%g %ss, ' % (n, names[int(c)])  # add to string
+                # Recording logic
+                if any(c == 0 for c in det[:, -1].unique()):  # Check if class 0 (fire) is detected
+                    if not recording:
+                        recording = True
+                        start_time = time.time()
+                        print("Fire detected! Recording...")
+
+                        # Set up video writer for recording
+                        if vid_writer is not None:
+                            vid_writer.release()
+                        timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                        record_name = f'record_{timestamp}.mp4'
+                        record_path = os.path.join(record_folder, record_name)
+                        size = (im0.shape[1], im0.shape[0])
+                        vid_writer = cv2.VideoWriter(record_path, cv2.VideoWriter_fourcc(*'mp4v'), 24, size)
+
+                        # Increment fire frames counter
+                        fire_frames += 1
 
                 # Write results
                 for *xyxy, conf, cls in det:
                     if save_txt:  # Write to file
-                        print(f'Detected {names[int(cls)]} with confidence: {conf * 100:.2f}%')
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         with open(txt_path + '.txt', 'a') as f:
                             f.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
-                        print(f'Detected {names[int(cls)]} with confidence: {conf * 100:.2f}%')
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
-                        # plot_one_box(xyxy, im0, label=None, color=colors[int(cls)], line_thickness=3)  # 只画框，不画类别 置信度
+
+                # If recording, write frame to the video file
+                if recording:
+                    vid_writer.write(im0)
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
             # Stream results
-            if view_img:    
+            if view_img:
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
@@ -128,6 +154,7 @@ def detect(save_img=False):
                 else:
                     if vid_path != save_path:  # new video
                         vid_path = save_path
+
                         if isinstance(vid_writer, cv2.VideoWriter):
                             vid_writer.release()  # release previous video writer
 
@@ -136,7 +163,21 @@ def detect(save_img=False):
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
-                    vid_writer.write(im0)
+
+        # Check if 10 seconds have elapsed since the start of recording
+        if recording and time.time() - start_time >= record_duration:
+            recording = False
+            vid_writer.release()
+            print("Recording stopped. Duration:", time.time() - start_time)
+
+    # Release video writer when done
+    if vid_writer is not None:
+        vid_writer.release()
+
+    # Calculate and print the percentage of frames with fire
+    if total_frames > 0:
+        percentage_fire = (fire_frames / total_frames) * 10000
+        print(f"Percentage of frames with fire: {percentage_fire:.2f}%")
 
     if save_txt or save_img:
         print('Results saved to %s' % Path(out))
@@ -161,13 +202,17 @@ if __name__ == '__main__':
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
+    parser.add_argument('--record-folder', type=str, default='inference/records', help='folder to save recorded videos')
     opt = parser.parse_args()
     print(opt)
+
+    # Ensure the record folder exists
+    os.makedirs(opt.record_folder, exist_ok=True)
 
     with torch.no_grad():
         if opt.update:  # update all models (to fix SourceChangeWarning)
             for opt.weights in ['yolov5s.pt', 'yolov5m.pt', 'yolov5l.pt', 'yolov5x.pt']:
-                detect()
+                detect_and_record()
                 strip_optimizer(opt.weights)
         else:
-            detect()
+            detect_and_record()
