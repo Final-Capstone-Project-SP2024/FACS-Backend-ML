@@ -16,16 +16,28 @@ from numpy import random
 import datetime as dt
 import threading
 
-def detect_and_record(save_img=False):
-    out, source, weights, view_img, save_txt, imgsz, record_folder = \
-        opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.record_folder
-    webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
+class CameraThread(threading.Thread):
+    def __init__(self, opt, source):
+        threading.Thread.__init__(self)
+        self.opt = argparse.Namespace(**vars(opt))
+        self.source = source
+        print(f"Initializing thread with source {self.source}")
+
+    def run(self):
+        print(f"Starting detection and recording for camera {self.source}")
+        detect_and_record(self.source, self.opt)
+        print(f"Thread for camera {self.source} has finished")
+
+def detect_and_record(src, opt, save_img=False):
+    out, weights, view_img, save_txt, imgsz, record_folder = \
+        opt.output, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.record_folder
+    webcam = src.isdigit()  # Check if the source is a digit (webcam)
 
     # Initialize
     device = select_device(opt.device)
-    if os.path.exists(out):
-        shutil.rmtree(out)  # delete output folder
-    os.makedirs(out)  # make new output folder
+    # if os.path.exists(out):
+    #     shutil.rmtree(out)  # delete output folder
+    os.makedirs(out, exist_ok=True)  # make new output folder
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
     # Load model
@@ -43,12 +55,12 @@ def detect_and_record(save_img=False):
 
     # Set Dataloader
     vid_path, vid_writer = None, None
-    if webcam:
+    if str(src).isdigit(): # 0, 1, 2, etc. for webcam
         view_img = True
-        dataset = LoadStreams(source, img_size=imgsz)
+        dataset = LoadStreams(int(src), img_size=imgsz)
     else:
         save_img = True
-        dataset = LoadImages(source, img_size=imgsz)
+        dataset = LoadImages(src, img_size=imgsz)
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
@@ -89,13 +101,23 @@ def detect_and_record(save_img=False):
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
-            if webcam:  # batch_size >= 1
+            if webcam:  # We're indexing cameras by number
                 p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
+                window_name = f"camera_{src}"  # Static window name for each camera
+                save_path = str(Path(out) / f"{window_name}.jpg")
+                txt_path = str(Path(out) / window_name)
+                cv2.imshow(window_name, im0)  # Use static window name
             else:
                 p, s, im0 = path, '', im0s
+                # Ensure p is a string representation of the path for non-webcam sources
+                p_str = str(p)
+                save_path = str(Path(out) / Path(p_str).name)  # For file paths
+                txt_path = str(Path(out) / Path(p_str).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
+                # Convert p to string in case it is not already
+                cv2.imshow(p_str, im0)
 
-            save_path = str(Path(out) / Path(p).name)
-            txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
+            # save_path = str(Path(out) / Path(p).name)
+            # txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
 
@@ -155,7 +177,7 @@ def detect_and_record(save_img=False):
 
             # Stream results
             if view_img:
-                cv2.imshow(p, im0)
+                cv2.imshow(str(p), im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
 
@@ -199,10 +221,13 @@ def detect_and_record(save_img=False):
     print('Done. (%.3fs)' % (time.time() - t0))
 
 
+# ...
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='best.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='inference/images', help='source')  # file/folder, 0 for webcam
+    # parser.add_argument('--source', nargs='+', type=str, help='source')  # multiple file/folders, 0 for webcam
+    parser.add_argument('--source', nargs='+', type=str, default=['0', '1'], help='sources list: 0 for internal camera, 1 for external, or path to video files/stream URLs')
     parser.add_argument('--output', type=str, default='inference/output', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.4, help='object confidence threshold')
@@ -215,16 +240,17 @@ if __name__ == '__main__':
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
     parser.add_argument('--record-folder', type=str, default='inference/records', help='folder to save recorded videos')
+    # Parse the arguments and make sure the record folder exists
     opt = parser.parse_args()
-    print(opt)
-
-    # Ensure the record folder exists
     os.makedirs(opt.record_folder, exist_ok=True)
 
-    with torch.no_grad():
-        if opt.update:  # update all models (to fix SourceChangeWarning)
-            for opt.weights in ['yolov5s.pt', 'yolov5m.pt', 'yolov5l.pt', 'yolov5x.pt']:
-                detect_and_record()
-                strip_optimizer(opt.weights)
-        else:
-            detect_and_record()
+    # Start the camera threads
+    threads = []
+    for source in opt.source:
+        thread = CameraThread(opt, source)
+        threads.append(thread)
+        thread.start()
+
+    # Wait for all threads to finish
+    for thread in threads:
+        thread.join()
