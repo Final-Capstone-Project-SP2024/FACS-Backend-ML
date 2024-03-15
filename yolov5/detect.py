@@ -14,6 +14,7 @@ from utils.general import (
 from utils.torch_utils import select_device, load_classifier, time_synchronized
 from numpy import random
 import datetime as dt
+import threading
 
 def detect_and_record(save_img=False):
     out, source, weights, view_img, save_txt, imgsz, record_folder = \
@@ -57,6 +58,7 @@ def detect_and_record(save_img=False):
     recording = False
     start_time = 0
     record_duration = 10  # in seconds
+    pre_fire_duration = 5  # in seconds
 
     # Initialize fire detection counter
     total_frames = 0
@@ -123,20 +125,30 @@ def detect_and_record(save_img=False):
                         # Increment fire frames counter
                         fire_frames += 1
 
+                        # Set start time for pre-fire duration
+                        pre_fire_start_time = start_time
+
                 # Write results
                 for *xyxy, conf, cls in det:
-                    if save_txt:  # Write to file
-                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        with open(txt_path + '.txt', 'a') as f:
-                            f.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
+                    xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+                    with open(txt_path + '.txt', 'a') as f:
+                        f.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
 
-                    if save_img or view_img:  # Add bbox to image
-                        label = '%s %.2f' % (names[int(cls)], conf)
-                        plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
+                    # Add bbox to image
+                    label = '%s %.2f' % (names[int(cls)], conf)
+                    plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
 
                 # If recording, write frame to the video file
                 if recording:
-                    vid_writer.write(im0)
+                    if time.time() - pre_fire_start_time < pre_fire_duration:
+                        # Save frames only for pre-fire duration
+                        vid_writer.write(im0)
+
+                    # Check if 10 seconds have elapsed since the start of recording
+                    elif time.time() - start_time >= record_duration:
+                        recording = False
+                        vid_writer.release()
+                        print("Recording stopped. Duration:", time.time() - start_time)
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
@@ -176,7 +188,7 @@ def detect_and_record(save_img=False):
 
     # Calculate and print the percentage of frames with fire
     if total_frames > 0:
-        percentage_fire = (fire_frames / total_frames) * 10000
+        percentage_fire = (fire_frames / total_frames) * 100 * 100
         print(f"Percentage of frames with fire: {percentage_fire:.2f}%")
 
     if save_txt or save_img:
