@@ -1,17 +1,19 @@
 import requests
 
-url = "https://firealarmcamerasolution.azurewebsites.net/api/v1/Camera"
-jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoic3RyaW5nIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWFuYWdlciIsIlVzZXJJZCI6IjBmMzhlYjEwLTFhZTQtNDlhMS1iMWUzLTVkMTUzYjIzOThiMCIsImV4cCI6MTcxNjM1NDQyNCwiaXNzIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIiwiYXVkIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIn0.qbcARNPtK5fcBBmbNCM-MttM0ou3btbj3G7LdFcRVzI"
+detect_url = "https://firealarmcamerasolution.azurewebsites.net/api/v1/Camera/ae345580-8276-4181-ba97-33f95df700f9/detect"
+# camera_id = 'ae345580-8276-4181-ba97-33f95df700f9'
 
-headers = {
-    "Authorization": f"Bearer {jwt_token}",
-    "Content-Type": "application/json"
+data = {
+    "predictedPercent": 100,
+    "pictureUrl": "1",
+    "videoUrl" : "video_url"
 }
 
-response = requests.get(url, headers=headers)
+headers = {"x-api-key": "comsuonhocmon"}
+
+response = requests.post(detect_url, json=data, headers=headers)
 
 if response.status_code == 200:
-    data = response.json()
-    print(data)
+    print("POST request successful.")
 else:
-    print("Failed to retrieve data. Status code:", response.status_code)
+    print(f"Failed to send POST request. Status code: {response.status_code}")

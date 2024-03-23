@@ -22,7 +22,7 @@ import datetime as dt
 import threading
 import moviepy.editor as moviepy
 
-jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoic3RyaW5nIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWFuYWdlciIsIlVzZXJJZCI6IjBmMzhlYjEwLTFhZTQtNDlhMS1iMWUzLTVkMTUzYjIzOThiMCIsImV4cCI6MTcxNjM1NDQyNCwiaXNzIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIiwiYXVkIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIn0.qbcARNPtK5fcBBmbNCM-MttM0ou3btbj3G7LdFcRVzI"
+jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoic3RyaW5nIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWFuYWdlciIsIlVzZXJJZCI6IjBmMzhlYjEwLTFhZTQtNDlhMS1iMWUzLTVkMTUzYjIzOThiMCIsImV4cCI6MTcxNjM4MjgxNSwiaXNzIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIiwiYXVkIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIn0.XHbn3geWIJHAvAfME8V4LK-BxxWY8Di4X1PU96KdYQo"
 
 class CameraThread(threading.Thread):
     def __init__(self, opt, source):
@@ -42,8 +42,40 @@ def initialize_firebase():
         firebase_admin.initialize_app(cred, {
             'storageBucket': 'final-capstone-project-f8bdd.appspot.com'
         })
+        
+def fetch_camera_details(camera_name):
+    url = f"https://firealarmcamerasolution.azurewebsites.net/api/v1/Camera"
+    headers = {"Authorization": f"Bearer {jwt_token}"}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        for camera in data["data"]:
+            if camera["cameraName"] == camera_name:
+                print(f"Camera '{camera_name}' found in the API response.") #found all
+                return camera
+        print(f"Camera '{camera_name}' not found in the API response.")
+    else:
+        print(f"Failed to fetch camera details. Status code: {response.status_code}")
+    return None
 
-# Upload file to Firebase Storage
+def send_detection_result(camera_id, average_percent, image_url, video_url):
+    detect_url = f"https://firealarmcamerasolution.azurewebsites.net/api/v1/Camera/{camera_id}/detect"
+    
+    data = {
+        "predictedPercent": average_percent,
+        "pictureUrl" : "test_img_data_cuz_not_done_yet",
+        "videoUrl": video_url
+    }
+    
+    headers = {"x-api-key": "comsuonhocmon"}
+    
+    response = requests.post(detect_url, json=data, headers=headers)
+    
+    if response.status_code == 200:
+        print("POST request successful.")
+    else:
+        print(f"Failed to send POST request. Status code: {response.status_code}")
+
 def upload_file_to_storage(local_file_path, destination_file_name):
     bucket = storage.bucket()
     blob = bucket.blob(destination_file_name)
@@ -64,8 +96,17 @@ def detect_and_record(src, opt, save_img=False):
     out, weights, view_img, save_txt, imgsz, record_folder = \
         opt.output, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.record_folder
     webcam = src.isdigit()  # Check if the source is a digit (webcam)
-    capture_counts = {source: 1 for source in opt.source}
     image_captured = {source: False for source in opt.source}
+    capture_counts = 0
+    
+    for source in opt.source:
+        capture_counts += 1
+        camera_details = fetch_camera_details(camera_name=f"camera_{src}")
+    if camera_details:
+        print(f"Camera details for camera_{src}: {camera_details}")
+    else:
+        print(f"Failed to fetch camera details for camera_{source}")
+        
 
     # Initialize
     device = select_device(opt.device)
@@ -146,7 +187,6 @@ def detect_and_record(src, opt, save_img=False):
                 save_path = str(Path(out) / Path(p_str).name)  # For file paths
                 txt_path = str(Path(out) / Path(p_str).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
 
-            fetch_camera_details(window_name)  # Function to fetch camera details from API
 
             # Convert p to string in case it is not already
             cv2.imshow(window_name, im0)  # Use unique window name for each camera source
@@ -287,22 +327,6 @@ def detect_and_record(src, opt, save_img=False):
             os.system('open ' + save_path)
 
     print('Done. (%.3fs)' % (time.time() - t0))
-
-def fetch_camera_details(camera_name):
-    # Make a GET request to fetch camera details from the API
-    url = f"https://firealarmcamerasolution.azurewebsites.net/api/v1/Camera"
-    headers = {"Authorization": f"Bearer {jwt_token}"}  # Replace YOUR_JWT_TOKEN with the actual JWT token
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        # Iterate through the cameras and find the details of the camera with the given name
-        for camera in data["data"]:
-            if camera["cameraName"] == camera_name:
-                return camera
-        print(f"Camera '{camera_name}' not found in the API response.")
-    else:
-        print(f"Failed to fetch camera details. Status code: {response.status_code}")
-    return None
 
 
 if __name__ == '__main__':
