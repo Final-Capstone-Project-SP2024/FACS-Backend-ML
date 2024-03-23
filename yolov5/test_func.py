@@ -1,44 +1,17 @@
-# Python program to continuously capture video from webcam until 'q' is pressed to quit
+import requests
 
-# Import the necessary libraries
-import cv2
+url = "https://firealarmcamerasolution.azurewebsites.net/api/v1/Camera"
+jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoic3RyaW5nIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWFuYWdlciIsIlVzZXJJZCI6IjBmMzhlYjEwLTFhZTQtNDlhMS1iMWUzLTVkMTUzYjIzOThiMCIsImV4cCI6MTcxNjM1NDQyNCwiaXNzIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIiwiYXVkIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIn0.qbcARNPtK5fcBBmbNCM-MttM0ou3btbj3G7LdFcRVzI"
 
+headers = {
+    "Authorization": f"Bearer {jwt_token}",
+    "Content-Type": "application/json"
+}
 
-# Open the webcam
-cap = cv2.VideoCapture(1)
+response = requests.get(url, headers=headers)
 
-# Check if the webcam is opened successfully
-if not cap.isOpened():
-    print("Error: Could not open webcam")
-    exit()
-
-# Define the codec and create VideoWriter object
-fourcc = cv2.VideoWriter_fourcc(*'XVID')
-out = cv2.VideoWriter('continuous_video.avi', fourcc, 20.0, (640, 480))
-
-# Loop to continuously capture video
-while cap.isOpened():
-    # Read a frame from the webcam
-    ret, frame = cap.read()
-
-    # Check if the frame is read successfully
-    if not ret:
-        print("Error: Could not read frame")
-        break
-
-    # Write the frame to the output video
-    out.write(frame)
-
-    # Display the captured frame
-    cv2.imshow('frame', frame)
-
-    # Wait for 'q' key to quit
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-# Release the webcam and output video
-cap.release()
-out.release()
-
-# Close all OpenCV windows
-cv2.destroyAllWindows()
+if response.status_code == 200:
+    data = response.json()
+    print(data)
+else:
+    print("Failed to retrieve data. Status code:", response.status_code)

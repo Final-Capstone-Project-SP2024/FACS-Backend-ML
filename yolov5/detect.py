@@ -3,6 +3,7 @@ import os
 import platform
 import time
 from pathlib import Path
+import requests  # Import requests library for making HTTP requests
 
 import firebase_admin
 from firebase_admin import credentials, storage
@@ -20,6 +21,8 @@ from numpy import random
 import datetime as dt
 import threading
 import moviepy.editor as moviepy
+
+jwt_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoic3RyaW5nIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiTWFuYWdlciIsIlVzZXJJZCI6IjBmMzhlYjEwLTFhZTQtNDlhMS1iMWUzLTVkMTUzYjIzOThiMCIsImV4cCI6MTcxNjM1NDQyNCwiaXNzIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIiwiYXVkIjoiRkFDUyAtIEZpcmUgQWxhcm0gQ2FtZXJhIFNvbHV0aW9uIn0.qbcARNPtK5fcBBmbNCM-MttM0ou3btbj3G7LdFcRVzI"
 
 class CameraThread(threading.Thread):
     def __init__(self, opt, source):
@@ -61,6 +64,8 @@ def detect_and_record(src, opt, save_img=False):
     out, weights, view_img, save_txt, imgsz, record_folder = \
         opt.output, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.record_folder
     webcam = src.isdigit()  # Check if the source is a digit (webcam)
+    capture_counts = {source: 1 for source in opt.source}
+    image_captured = {source: False for source in opt.source}
 
     # Initialize
     device = select_device(opt.device)
@@ -131,15 +136,18 @@ def detect_and_record(src, opt, save_img=False):
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # We're indexing cameras by number
                 p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
-                window_name = f"{src}"  # Unique window name for each camera source
+                window_name = f"camera_{src}"  # Unique window name for each camera source
                 save_path = str(Path(out) / f"{window_name}.jpg")
                 txt_path = str(Path(out) / window_name)
             else:
                 p, s, im0 = path, '', im0s
-                window_name = f"{src}"  # Unique window name for each camera source
+                window_name = f"camera_{src}"  # Unique window name for each camera source
                 p_str = str(p)
                 save_path = str(Path(out) / Path(p_str).name)  # For file paths
                 txt_path = str(Path(out) / Path(p_str).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
+
+            fetch_camera_details(window_name)  # Function to fetch camera details from API
+
             # Convert p to string in case it is not already
             cv2.imshow(window_name, im0)  # Use unique window name for each camera source
 
@@ -169,7 +177,7 @@ def detect_and_record(src, opt, save_img=False):
                         record_name = file_name + ".avi"
                         record_path = os.path.join(record_folder, record_name)
                         size = (im0.shape[1], im0.shape[0])
-                        vid_writer = cv2.VideoWriter(record_path, cv2.VideoWriter_fourcc(*'XVID'), 24, size)
+                        vid_writer = cv2.VideoWriter(record_path, cv2.VideoWriter_fourcc(*'XVID'), 12, size)
 
                         # Increment fire frames counter
                         fire_frames += 1
@@ -218,7 +226,7 @@ def detect_and_record(src, opt, save_img=False):
 
             # Stream results
             if view_img:
-                cv2.imshow(str(p), im0)
+                cv2.imshow(f'camera_{src}', im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     # Release the video writer before quitting
                     if vid_writer is not None:
@@ -264,7 +272,7 @@ def detect_and_record(src, opt, save_img=False):
             except ValueError as e:
                 print(str(e))
 
-    # Release video writer when done
+        # Release video writer when done
     if vid_writer is not None:
         vid_writer.release()
 
@@ -279,6 +287,23 @@ def detect_and_record(src, opt, save_img=False):
             os.system('open ' + save_path)
 
     print('Done. (%.3fs)' % (time.time() - t0))
+
+def fetch_camera_details(camera_name):
+    # Make a GET request to fetch camera details from the API
+    url = f"https://firealarmcamerasolution.azurewebsites.net/api/v1/Camera"
+    headers = {"Authorization": f"Bearer {jwt_token}"}  # Replace YOUR_JWT_TOKEN with the actual JWT token
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        # Iterate through the cameras and find the details of the camera with the given name
+        for camera in data["data"]:
+            if camera["cameraName"] == camera_name:
+                return camera
+        print(f"Camera '{camera_name}' not found in the API response.")
+    else:
+        print(f"Failed to fetch camera details. Status code: {response.status_code}")
+    return None
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
