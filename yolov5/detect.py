@@ -139,7 +139,7 @@ def detect_and_record(src, opt, save_img=False):
                         if vid_writer is not None:
                             vid_writer.release()
                         timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                        record_name = f'record_{timestamp}.mp4'
+                        record_name = f'record_{timestamp}.t'
                         record_path = os.path.join(record_folder, record_name)
                         size = (im0.shape[1], im0.shape[0])
                         vid_writer = cv2.VideoWriter(record_path, cv2.VideoWriter_fourcc(*'mp4v'), 24, size)

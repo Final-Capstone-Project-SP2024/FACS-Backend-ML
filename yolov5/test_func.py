@@ -1,69 +1,44 @@
+# Python program to continuously capture video from webcam until 'q' is pressed to quit
+
+# Import the necessary libraries
 import cv2
-import datetime as dt
-import time
-import threading
 
-# Function to read frames, display on screen, and record video from a camera
-def record_video(camera_index, stop_event):
-    cap = cv2.VideoCapture(camera_index)
-    if not cap.isOpened():
-        print(f"Failed to open camera {camera_index}")
-        return
 
-    # Get the frame size from the camera
-    size = (int(cap.get(3)), int(cap.get(4)))
+# Open the webcam
+cap = cv2.VideoCapture(1)
 
-    # Initialize variables for recording
-    record_time = 10  # Record video every 10 seconds
-    record_number = 1  # Initial record number
+# Check if the webcam is opened successfully
+if not cap.isOpened():
+    print("Error: Could not open webcam")
+    exit()
 
-    while not stop_event.is_set():
-        start_time = time.time()
-        timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        file_name = f"camera_{camera_index}_{timestamp}_record_{record_number}.mp4"
-        result = cv2.VideoWriter(file_name, cv2.VideoWriter_fourcc(*'mp4v'), 24, size)
+# Define the codec and create VideoWriter object
+fourcc = cv2.VideoWriter_fourcc(*'XVID')
+out = cv2.VideoWriter('continuous_video.avi', fourcc, 20.0, (640, 480))
 
-        while time.time() - start_time < record_time and not stop_event.is_set():
-            ret, frame = cap.read()
-            if not ret:
-                print(f"Failed to capture frame from camera {camera_index}")
-                break
+# Loop to continuously capture video
+while cap.isOpened():
+    # Read a frame from the webcam
+    ret, frame = cap.read()
 
-            cv2.imshow(f"Camera {camera_index}", frame)
-            result.write(frame)
+    # Check if the frame is read successfully
+    if not ret:
+        print("Error: Could not read frame")
+        break
 
-            # Press 'q' to stop recording and exit
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+    # Write the frame to the output video
+    out.write(frame)
 
-        result.release()
-        record_number += 1
+    # Display the captured frame
+    cv2.imshow('frame', frame)
 
-    # Release resources
-    cap.release()
-    cv2.destroyAllWindows()
+    # Wait for 'q' key to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-# Create stop events for each thread
-stop_event_internal = threading.Event()
-stop_event_external = threading.Event()
+# Release the webcam and output video
+cap.release()
+out.release()
 
-# Create threads for each camera
-thread_internal = threading.Thread(target=record_video, args=(0, stop_event_internal))
-thread_external = threading.Thread(target=record_video, args=(1, stop_event_external))
-
-# Start threads
-thread_internal.start()
-thread_external.start()
-
-# Let the threads run indefinitely  
-try:
-    while True:
-        time.sleep(0)
-except KeyboardInterrupt:
-    # If you want to stop the threads manually by pressing Ctrl+C
-    stop_event_internal.set()
-    stop_event_external.set()   
-    thread_internal.join()
-    thread_external.join()
-
-print("Recording stopped for both cameras.")
+# Close all OpenCV windows
+cv2.destroyAllWindows()
