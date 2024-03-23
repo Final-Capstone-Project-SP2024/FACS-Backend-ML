@@ -13,12 +13,19 @@ Before running the program, make sure you have the following installed:
 
 1. Clone the repository:
 
-   git clone https://github.com/your-username/FACS-Backend-ML.git
+   git clone https://github.com/ducanhnt22/FACS-Backend-ML.git
 
 2. To run this model, first
 
     cd .\yolov5\
 
-    python detect.py --source 0 --weights ./best.pt
+    ### If you have only 1 camera
+    python detect.py --source 0 --weights ./best.pt 
+
+    ### If you have more than 2 camera
+    python detect.py --source 0 1 --weights ./best.pt  (0 is internal camera, number except 0 is external camera)
+
+    #### You can use rtsp camera
+    python detect.py --source 0 (rstp url) --weights ./best.pt 
 
 3. Enjoy with the model

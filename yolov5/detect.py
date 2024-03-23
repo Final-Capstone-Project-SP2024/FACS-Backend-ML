@@ -21,7 +21,6 @@ import datetime as dt
 import threading
 import moviepy.editor as moviepy
 
-
 class CameraThread(threading.Thread):
     def __init__(self, opt, source):
         threading.Thread.__init__(self)
@@ -33,6 +32,29 @@ class CameraThread(threading.Thread):
         print(f"Starting detection and recording for camera {self.source}")
         detect_and_record(self.source, self.opt)
         print(f"Thread for camera {self.source} has finished")
+        
+def initialize_firebase():
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(".serviceAccountKey.json") 
+        firebase_admin.initialize_app(cred, {
+            'storageBucket': 'final-capstone-project-f8bdd.appspot.com'
+        })
+
+# Upload file to Firebase Storage
+def upload_file_to_storage(local_file_path, destination_file_name):
+    bucket = storage.bucket()
+    blob = bucket.blob(destination_file_name)
+    blob.upload_from_filename(local_file_path)
+
+    try:
+        blob.reload()
+        url_expiration = datetime.timedelta(hours=1) 
+        expiration_date = datetime.datetime.now() + url_expiration
+        download_url = blob.generate_signed_url(expiration=expiration_date)
+        return download_url
+    except exceptions.NotFound:
+        raise ValueError("The file upload was not successful. The blob doesn't exist in the bucket.")
+
 
 def detect_and_record(src, opt, save_img=False):
     out, weights, view_img, save_txt, imgsz, record_folder = \
