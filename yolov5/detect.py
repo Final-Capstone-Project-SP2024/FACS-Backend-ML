@@ -131,18 +131,17 @@ def detect_and_record(src, opt, save_img=False):
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # We're indexing cameras by number
                 p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
-                window_name = f"camera_{src}"  # Static window name for each camera
+                window_name = f"{src}"  # Unique window name for each camera source
                 save_path = str(Path(out) / f"{window_name}.jpg")
                 txt_path = str(Path(out) / window_name)
-                cv2.imshow(window_name, im0)  # Use static window name
             else:
                 p, s, im0 = path, '', im0s
-                # Ensure p is a string representation of the path for non-webcam sources
+                window_name = f"{src}"  # Unique window name for each camera source
                 p_str = str(p)
                 save_path = str(Path(out) / Path(p_str).name)  # For file paths
                 txt_path = str(Path(out) / Path(p_str).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
-                # Convert p to string in case it is not already
-                cv2.imshow(p_str, im0)
+            # Convert p to string in case it is not already
+            cv2.imshow(window_name, im0)  # Use unique window name for each camera source
 
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
@@ -166,7 +165,7 @@ def detect_and_record(src, opt, save_img=False):
                             vid_writer.release()
                             
                         timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                        file_name = f'camera_{timestamp}'
+                        file_name = f'camera_{src}_{timestamp}'
                         record_name = file_name + ".avi"
                         record_path = os.path.join(record_folder, record_name)
                         size = (im0.shape[1], im0.shape[0])
