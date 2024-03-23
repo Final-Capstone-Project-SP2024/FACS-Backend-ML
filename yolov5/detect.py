@@ -35,7 +35,7 @@ class CameraThread(threading.Thread):
         
 def initialize_firebase():
     if not firebase_admin._apps:
-        cred = credentials.Certificate(".serviceAccountKey.json") 
+        cred = credentials.Certificate("./serviceAccountKey.json") 
         firebase_admin.initialize_app(cred, {
             'storageBucket': 'final-capstone-project-f8bdd.appspot.com'
         })
@@ -53,9 +53,10 @@ def upload_file_to_storage(local_file_path, destination_file_name):
         download_url = blob.generate_signed_url(expiration=expiration_date)
         return download_url
     except exceptions.NotFound:
-        raise ValueError("The file upload was not successful. The blob doesn't exist in the bucket.")
+        raise ValueError("The file upload was not successful")
 
 
+# Function to detect and record
 def detect_and_record(src, opt, save_img=False):
     out, weights, view_img, save_txt, imgsz, record_folder = \
         opt.output, opt.weights, opt.view_img, opt.save_txt, opt.img_size, opt.record_folder
@@ -97,6 +98,7 @@ def detect_and_record(src, opt, save_img=False):
     start_time = 0
     record_duration = 10  # in seconds
     pre_fire_duration = 5  # in seconds
+    record_path = None  # Path to the recorded video
 
     # Initialize fire detection counter
     total_frames = 0
@@ -162,8 +164,10 @@ def detect_and_record(src, opt, save_img=False):
                         # Set up video writer for recording
                         if vid_writer is not None:
                             vid_writer.release()
+                            
                         timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                        record_name = f'record_{timestamp}.avi'
+                        file_name = f'camera_{timestamp}'
+                        record_name = file_name + ".avi"
                         record_path = os.path.join(record_folder, record_name)
                         size = (im0.shape[1], im0.shape[0])
                         vid_writer = cv2.VideoWriter(record_path, cv2.VideoWriter_fourcc(*'XVID'), 24, size)
@@ -197,8 +201,18 @@ def detect_and_record(src, opt, save_img=False):
                         print("Recording stopped. Duration:", time.time() - start_time)
 
                         # Convert the recorded video to MP4 format
+                        mp4_file_name = f'{file_name}.mp4'
+                        mp4_file_path = os.path.join(record_folder, mp4_file_name)
                         clip = moviepy.VideoFileClip(record_path)
-                        clip.write_videofile(record_path + ".mp4")
+                        clip.write_videofile(mp4_file_path)
+
+                        # Upload MP4 file to Firebase Storage
+                        try:
+                            initialize_firebase()  # Initialize Firebase if not already initialized
+                            download_url = upload_file_to_storage(mp4_file_path, mp4_file_name)
+                            print("File uploaded successfully. Download URL:", download_url)
+                        except ValueError as e:
+                            print(str(e))
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
@@ -238,8 +252,18 @@ def detect_and_record(src, opt, save_img=False):
             print("Recording stopped. Duration:", time.time() - start_time)
             
             # Convert the recorded video to MP4 format
-            clip = moviepy.VideoFileClip(record_path + ".avi")
-            clip.write_videofile(record_path + ".mp4")
+            mp4_file_name = f'{file_name}.mp4'
+            mp4_file_path = os.path.join(record_folder, mp4_file_name)
+            clip = moviepy.VideoFileClip(record_path)
+            clip.write_videofile(mp4_file_path)
+
+            # Upload MP4 file to Firebase Storage
+            try:
+                initialize_firebase()  # Initialize Firebase if not already initialized
+                download_url = upload_file_to_storage(mp4_file_path, mp4_file_name)
+                print("File uploaded successfully. Download URL:", download_url)
+            except ValueError as e:
+                print(str(e))
 
     # Release video writer when done
     if vid_writer is not None:
@@ -256,9 +280,6 @@ def detect_and_record(src, opt, save_img=False):
             os.system('open ' + save_path)
 
     print('Done. (%.3fs)' % (time.time() - t0))
-
-
-# ...
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
