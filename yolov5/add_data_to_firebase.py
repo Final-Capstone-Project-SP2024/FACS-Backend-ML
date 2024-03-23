@@ -25,8 +25,8 @@ def upload_file_to_storage(local_file_path, destination_file_name):
         raise ValueError("The file upload was not successful. The blob doesn't exist in the bucket.")
 
 if __name__ == "__main__":
-    local_file_path = "./yolov5/continuous_video.mp4"
-    destination_file_name = "khongduocnuaxoacode.mp4"
+    local_file_path = "./yolov5/inference/records/record_2024-03-23_09-16-34.avi.mp4"
+    destination_file_name = "testkhongtroll.mp4"
     try:
         download_url = upload_file_to_storage(local_file_path, destination_file_name)
         print("File uploaded successfully. Download URL:", download_url)

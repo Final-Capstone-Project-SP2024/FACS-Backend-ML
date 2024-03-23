@@ -1,9 +1,13 @@
 import argparse
 import os
 import platform
-import shutil
 import time
 from pathlib import Path
+
+import firebase_admin
+from firebase_admin import credentials, storage
+import datetime
+from google.cloud import exceptions
 
 import cv2
 import torch
@@ -15,6 +19,8 @@ from utils.torch_utils import select_device, load_classifier, time_synchronized
 from numpy import random
 import datetime as dt
 import threading
+import moviepy.editor as moviepy
+
 
 class CameraThread(threading.Thread):
     def __init__(self, opt, source):
@@ -35,8 +41,6 @@ def detect_and_record(src, opt, save_img=False):
 
     # Initialize
     device = select_device(opt.device)
-    # if os.path.exists(out):
-    #     shutil.rmtree(out)  # delete output folder
     os.makedirs(out, exist_ok=True)  # make new output folder
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
@@ -116,8 +120,6 @@ def detect_and_record(src, opt, save_img=False):
                 # Convert p to string in case it is not already
                 cv2.imshow(p_str, im0)
 
-            # save_path = str(Path(out) / Path(p).name)
-            # txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
 
@@ -139,10 +141,10 @@ def detect_and_record(src, opt, save_img=False):
                         if vid_writer is not None:
                             vid_writer.release()
                         timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                        record_name = f'record_{timestamp}.t'
+                        record_name = f'record_{timestamp}.avi'
                         record_path = os.path.join(record_folder, record_name)
                         size = (im0.shape[1], im0.shape[0])
-                        vid_writer = cv2.VideoWriter(record_path, cv2.VideoWriter_fourcc(*'mp4v'), 24, size)
+                        vid_writer = cv2.VideoWriter(record_path, cv2.VideoWriter_fourcc(*'XVID'), 24, size)
 
                         # Increment fire frames counter
                         fire_frames += 1
@@ -157,7 +159,7 @@ def detect_and_record(src, opt, save_img=False):
                         f.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
 
                     # Add bbox to image
-                    label = '%s %.2f' % (names[int(cls)], conf)
+                    label  = '%s %.2f' % (names[int(cls)], conf)
                     plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
 
                 # If recording, write frame to the video file
@@ -172,6 +174,10 @@ def detect_and_record(src, opt, save_img=False):
                         vid_writer.release()
                         print("Recording stopped. Duration:", time.time() - start_time)
 
+                        # Convert the recorded video to MP4 format
+                        clip = moviepy.VideoFileClip(record_path)
+                        clip.write_videofile(record_path + ".mp4")
+
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
@@ -179,6 +185,11 @@ def detect_and_record(src, opt, save_img=False):
             if view_img:
                 cv2.imshow(str(p), im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
+                    # Release the video writer before quitting
+                    if vid_writer is not None:
+                        vid_writer.release()
+                    clip = moviepy.VideoFileClip(record_path)
+                    clip.write_videofile(record_name + ".mp4")
                     raise StopIteration
 
             # Save results (image with detections)
@@ -192,17 +203,21 @@ def detect_and_record(src, opt, save_img=False):
                         if isinstance(vid_writer, cv2.VideoWriter):
                             vid_writer.release()  # release previous video writer
 
-                        fourcc = 'mp4v'  # output video codec
+                        fourcc = cv2.VideoWriter_fourcc(*'XVID')
                         fps = vid_cap.get(cv2.CAP_PROP_FPS)
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
+                        vid_writer = cv2.VideoWriter(save_path, fourcc, fps, (w, h))
 
         # Check if 10 seconds have elapsed since the start of recording
         if recording and time.time() - start_time >= record_duration:
             recording = False
             vid_writer.release()
             print("Recording stopped. Duration:", time.time() - start_time)
+            
+            # Convert the recorded video to MP4 format
+            clip = moviepy.VideoFileClip(record_path + ".avi")
+            clip.write_videofile(record_path + ".mp4")
 
     # Release video writer when done
     if vid_writer is not None:
@@ -226,7 +241,6 @@ def detect_and_record(src, opt, save_img=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='best.pt', help='model.pt path(s)')
-    # parser.add_argument('--source', nargs='+', type=str, help='source')  # multiple file/folders, 0 for webcam
     parser.add_argument('--source', nargs='+', type=str, default=['0', '1'], help='sources list: 0 for internal camera, 1 for external, or path to video files/stream URLs')
     parser.add_argument('--output', type=str, default='inference/output', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
@@ -240,7 +254,6 @@ if __name__ == '__main__':
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
     parser.add_argument('--record-folder', type=str, default='inference/records', help='folder to save recorded videos')
-    # Parse the arguments and make sure the record folder exists
     opt = parser.parse_args()
     os.makedirs(opt.record_folder, exist_ok=True)
 
